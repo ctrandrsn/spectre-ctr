@@ -21,6 +21,9 @@
 #include "PointwiseFunctions/Hydro/Tags.hpp"
 #include "Utilities/TMPL.hpp"
 
+#include "Evolution/VariableFixing/FixToAtmosphere.hpp"
+#include "Evolution/VariableFixing/Tags.hpp"
+
 /// \cond
 class DataVector;
 template <size_t Dim>
@@ -131,7 +134,8 @@ class Wcns5zPrim : public Reconstructor {
       tmpl::list<::Tags::Variables<hydro::grmhd_tags<DataVector>>,
                  hydro::Tags::GrmhdEquationOfState, domain::Tags::Element<dim>,
                  evolution::dg::subcell::Tags::GhostDataForReconstruction<dim>,
-                 evolution::dg::subcell::Tags::Mesh<dim>>;
+                 evolution::dg::subcell::Tags::Mesh<dim>,
+                 ::Tags::VariableFixer<VariableFixing::FixToAtmosphere<dim>>>;
 
   template <size_t ThermodynamicDim>
   void reconstruct(
@@ -144,7 +148,8 @@ class Wcns5zPrim : public Reconstructor {
       const Element<dim>& element,
       const DirectionalIdMap<dim, evolution::dg::subcell::GhostData>&
           ghost_data,
-      const Mesh<dim>& subcell_mesh) const;
+      const Mesh<dim>& subcell_mesh,
+      const VariableFixing::FixToAtmosphere<dim>& fix_to_atmosphere) const;
 
   template <size_t ThermodynamicDim>
   void reconstruct_fd_neighbor(
@@ -155,6 +160,7 @@ class Wcns5zPrim : public Reconstructor {
       const DirectionalIdMap<dim, evolution::dg::subcell::GhostData>&
           ghost_data,
       const Mesh<dim>& subcell_mesh,
+      const VariableFixing::FixToAtmosphere<dim>& fix_to_atmosphere,
       const Direction<dim> direction_to_reconstruct) const;
 
  private:
