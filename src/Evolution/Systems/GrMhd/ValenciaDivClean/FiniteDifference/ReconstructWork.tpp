@@ -25,6 +25,7 @@
 #include "Evolution/DgSubcell/GhostData.hpp"
 #include "Evolution/Systems/GrMhd/ValenciaDivClean/ConservativeFromPrimitive.hpp"
 #include "Evolution/Systems/GrMhd/ValenciaDivClean/Tags.hpp"
+#include "Evolution/VariableFixing/FixToAtmosphere.hpp"
 #include "NumericalAlgorithms/Spectral/Mesh.hpp"
 #include "PointwiseFunctions/GeneralRelativity/Tags.hpp"
 #include "PointwiseFunctions/Hydro/EquationsOfState/EquationOfState.hpp"
@@ -36,7 +37,8 @@ namespace grmhd::ValenciaDivClean::fd {
 template <typename TagsList, size_t ThermodynamicDim>
 void compute_conservatives_for_reconstruction(
     const gsl::not_null<Variables<TagsList>*> vars_on_face,
-    const EquationsOfState::EquationOfState<true, ThermodynamicDim>& eos) {
+    const EquationsOfState::EquationOfState<true, ThermodynamicDim>& eos,
+    const VariableFixing::FixToAtmosphere<3>& fix_to_atmosphere) {
   // Computes:
   // 1. W v^i
   // 2. Lorentz factor as sqrt(1 + Wv^i Wv^j\gamma_{ij})
@@ -70,16 +72,24 @@ void compute_conservatives_for_reconstruction(
     spatial_velocity.get(i) /= get(lorentz_factor);
   }
 
-  // pointers to primitive variables
-  const auto& rest_mass_density =
+  // pointers to primitive variables /// No longer CONST??
+  auto& rest_mass_density =
       get<hydro::Tags::RestMassDensity<DataVector>>(*vars_on_face);
-  const auto& electron_fraction =
+  auto& electron_fraction =
       get<hydro::Tags::ElectronFraction<DataVector>>(*vars_on_face);
   auto& pressure = get<hydro::Tags::Pressure<DataVector>>(*vars_on_face);
   auto& specific_internal_energy =
       get<hydro::Tags::SpecificInternalEnergy<DataVector>>(*vars_on_face);
-  const auto& temperature =
+  auto& temperature =
       get<hydro::Tags::Temperature<DataVector>>(*vars_on_face);
+
+   fix_to_atmosphere(make_not_null(&rest_mass_density),
+                     make_not_null(&specific_internal_energy),
+                     make_not_null(&spatial_velocity),
+                     make_not_null(&lorentz_factor), make_not_null(&pressure),
+                     make_not_null(&temperature),
+                     make_not_null(&electron_fraction), spatial_metric, eos);
+// do a fix to atmosphere when computing conservatives
 
   // EoS calls based on reconstructed primitives
   if constexpr (ThermodynamicDim == 1) {
@@ -134,7 +144,8 @@ void reconstruct_prims_work(
     const DirectionalIdMap<3, Variables<PrimsTagsSentByNeighbor>>&
         neighbor_data,
     const Mesh<3>& subcell_mesh, const size_t ghost_zone_size,
-    const bool compute_conservatives) {
+    const bool compute_conservatives,
+    const VariableFixing::FixToAtmosphere<3>& fix_to_atmosphere) {
   ASSERT(Mesh<3>(subcell_mesh.extents(0), subcell_mesh.basis(0),
                  subcell_mesh.quadrature(0)) == subcell_mesh,
          "The subcell mesh should be isotropic but got " << subcell_mesh);
@@ -229,9 +240,11 @@ void reconstruct_prims_work(
 
   for (size_t i = 0; compute_conservatives and i < 3; ++i) {
     compute_conservatives_for_reconstruction(
-        make_not_null(&gsl::at(*vars_on_lower_face, i)), eos);
+        make_not_null(&gsl::at(*vars_on_lower_face, i)), eos,
+        fix_to_atmosphere);
     compute_conservatives_for_reconstruction(
-        make_not_null(&gsl::at(*vars_on_upper_face, i)), eos);
+        make_not_null(&gsl::at(*vars_on_upper_face, i)), eos,
+        fix_to_atmosphere);
   }
 }
 
@@ -245,7 +258,8 @@ void reconstruct_fd_neighbor_work(
     const Element<3>& element,
     const DirectionalIdMap<3, evolution::dg::subcell::GhostData>& ghost_data,
     const Mesh<3>& subcell_mesh, const Direction<3>& direction_to_reconstruct,
-    const size_t ghost_zone_size, const bool compute_conservatives) {
+    const size_t ghost_zone_size, const bool compute_conservatives,
+    const VariableFixing::FixToAtmosphere<3>& fix_to_atmosphere) {
   const DirectionalId<3> mortar_id{
       direction_to_reconstruct,
       *element.neighbors().at(direction_to_reconstruct).begin()};
@@ -315,7 +329,8 @@ void reconstruct_fd_neighbor_work(
       });
 
   if (compute_conservatives) {
-    compute_conservatives_for_reconstruction(vars_on_face, eos);
+    compute_conservatives_for_reconstruction(vars_on_face, eos,
+    fix_to_atmosphere);
   }
 }
 }  // namespace grmhd::ValenciaDivClean::fd
